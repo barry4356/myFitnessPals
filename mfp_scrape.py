@@ -46,6 +46,13 @@ def write_report(filename, palData, myPals):
     markdownLines.append('\n|')
     for pal in myPals:
         markdownLines.append(' '+pal+' |')
+        myCount = 0
+        for myDate in palData:
+            if myDate == dates[myCount]:
+                for myEntry in palData[myDate]:
+                    if myEntry['Name'] == pal:
+                        markdownLines.append(' '+str(myEntry['Calories'])+'/'+str(myEntry['Goal'])+' |')
+                        myCount += 1
         markdownLines.append('\n|')
         
     with open(filename, "w") as txt_file:
