@@ -18,7 +18,7 @@ def scrape_mfp(myDate, myPals):
         try:
             palDatum = {}
             palDatum['Name'] = myPal
-            palDatum['Goal'] = myClient.get_date(myDate, friend_username=myPal)._goals
+            #palDatum['Goal'] = myClient.get_date(myDate, friend_username=myPal)._goals
             palDatum['Goal'] = myClient.get_date(myDate, friend_username=myPal)._goals['calories']
             palDatum['Calories'] = myClient.get_date(myDate, friend_username=myPal).totals['calories']
             palData.append(palDatum)
@@ -28,16 +28,38 @@ def scrape_mfp(myDate, myPals):
     return palData
 
 
-def write_report(filename, palData):
+def write_report(filename, palData, myPals):
     myDate = datetime.datetime.today()
     markdownLines = []
+    # Write Report Header
     markdownLines.append('# Report {0}\n'.format(myDate.strftime('%m-%d-%Y')))
+    # Start Data Table
+    markdownLines.append('| |')
+    dates = []
+    for day in palData:
+        # Write dates as header of table
+        markdownLines.append(' '+day+' |')
+        dates.append(day)
+    markdownLines.append('\n| --- |')
+    for day in dates:
+        markdownLines.append(' --- |')
+    markdownLines.append('\n|')
+    for pal in myPals:
+        markdownLines.append(' '+pal+' |')
+        markdownLines.append('\n|')
+        
+    with open(filename, "w") as txt_file:
+        for line in markdownLines:
+            txt_file.write(line)
     return markdownLines
 
-myDate = datetime.date(
-            int(2024),
-            int(11),
-            int(13),
-        )
-palData = scrape_mfp(myDate, palList)
-print(write_report('temp.md', palData))
+myDate = datetime.datetime.today()
+number_of_days = 2
+palData = {}
+for i in range(number_of_days):
+    myDate = myDate - datetime.timedelta(days=1)
+    palDatum = scrape_mfp(myDate, palList)
+    palData[myDate.strftime('%m-%d-%Y')] = (palDatum)
+
+print(palData)
+print(write_report('temp.md', palData, palList))
