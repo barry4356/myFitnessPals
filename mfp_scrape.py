@@ -8,6 +8,7 @@ from mfp_request import getHTMLdocument
 from myfitnesspal.client import Client
 from pals import palList
 import datetime
+import traceback
   
 def scrape_mfp(myDate, myPals):
     myClient = Client()
@@ -19,14 +20,41 @@ def scrape_mfp(myDate, myPals):
             palDatum = {}
             palDatum['Name'] = myPal
             #palDatum['Goal'] = myClient.get_date(myDate, friend_username=myPal)._goals
-            palDatum['Goal'] = myClient.get_date(myDate, friend_username=myPal)._goals['calories']
-            palDatum['Calories'] = myClient.get_date(myDate, friend_username=myPal).totals['calories']
+            myDay = myClient.get_date(myDate, friend_username=myPal)
+            palDatum['Goal'] = myDay._goals['calories']
+            try:
+                palDatum['Calories'] = myDay.totals['calories']
+            except:
+                palDatum['Calories'] = 0
+            try:
+                palDatum['Excercises'] = myDay.exercises
+                for excercise in palDatum['Excercises']:
+                    for myexcercise in excercise.get_as_list():
+                        try:
+                            palDatum['Goal'] -= myexcercise['nutrition_information']['calories burned']
+                        except:
+                            pass
+            except:
+                pass
+            palDatum['Status'] = 'OK'
+            if palDatum['Calories'] < (palDatum['Goal'] * .2):
+                palDatum['Status'] = 'WARN'
+            if palDatum['Calories'] > palDatum['Goal'] or palDatum['Calories'] < 1:
+                palDatum['Status'] = 'FAIL'
             palData.append(palDatum)
         except Exception as e:
             print('Error pulling data for [{0}]'.format(myPal))
+            print(traceback.format_exc())
             print(e)
     return palData
 
+def write_emoji(status):
+    if status == 'OK':
+        return ':heavy_check_mark:'
+    if status == 'WARN':
+        return ':warning:'
+    if status == 'FAIL':
+        return ':no_entry_sign:'
 
 def write_report(filename, palData, myPals):
     myDate = datetime.datetime.today()
@@ -51,7 +79,7 @@ def write_report(filename, palData, myPals):
             if myDate == dates[myCount]:
                 for myEntry in palData[myDate]:
                     if myEntry['Name'] == pal:
-                        markdownLines.append(' '+str(myEntry['Calories'])+'/'+str(myEntry['Goal'])+' |')
+                        markdownLines.append(' '+str(int(myEntry['Calories']))+' / '+str(int(myEntry['Goal']))+' '+write_emoji(myEntry['Status'])+' |')
                         myCount += 1
         markdownLines.append('\n|')
         
@@ -61,7 +89,7 @@ def write_report(filename, palData, myPals):
     return markdownLines
 
 myDate = datetime.datetime.today()
-number_of_days = 2
+number_of_days = 7
 palData = {}
 for i in range(number_of_days):
     myDate = myDate - datetime.timedelta(days=1)
