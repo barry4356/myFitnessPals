@@ -12,14 +12,12 @@ import traceback
   
 def scrape_mfp(myDate, myPals):
     myClient = Client()
-    print(myClient.user_id)
-    print(myClient.effective_username)
+    print('Scraping Website for users [{0}] on date [{1}]'.format(myPals, myDate), flush=True)
     palData = []
     for myPal in palList:
         try:
             palDatum = {}
             palDatum['Name'] = myPal
-            #palDatum['Goal'] = myClient.get_date(myDate, friend_username=myPal)._goals
             myDay = myClient.get_date(myDate, friend_username=myPal)
             palDatum['Goal'] = myDay._goals['calories']
             try:
@@ -36,8 +34,15 @@ def scrape_mfp(myDate, myPals):
                             pass
             except:
                 pass
+            try:
+                for meal in myDay.meals:
+                    if meal.name.lower() == 'dinner':
+                        palDatum['Dinner'] = meal.totals['calories']
+            except:
+                palDatum['Dinner'] = 0
+            palDatum['Weblink'] = 'https://www.myfitnesspal.com/food/diary/'+myPal+'?date='+myDate.strftime('%Y-%m-%d')
             palDatum['Status'] = 'OK'
-            if palDatum['Calories'] < (palDatum['Goal'] * .2):
+            if palDatum['Calories'] < (palDatum['Goal'] * .8) or palDatum['Dinner'] < 1:
                 palDatum['Status'] = 'WARN'
             if palDatum['Calories'] > palDatum['Goal'] or palDatum['Calories'] < 1:
                 palDatum['Status'] = 'FAIL'
@@ -79,7 +84,7 @@ def write_report(filename, palData, myPals):
             if myDate == dates[myCount]:
                 for myEntry in palData[myDate]:
                     if myEntry['Name'] == pal:
-                        markdownLines.append(' '+str(int(myEntry['Calories']))+' / '+str(int(myEntry['Goal']))+' '+write_emoji(myEntry['Status'])+' |')
+                        markdownLines.append(' ['+str(int(myEntry['Calories']))+' / '+str(int(myEntry['Goal']))+']('+myEntry['Weblink']+') '+write_emoji(myEntry['Status'])+' |')
                         myCount += 1
         markdownLines.append('\n|')
         
