@@ -4,7 +4,6 @@ import requests
 import re
 import csv
 import sys
-from mfp_request import getHTMLdocument
 from myfitnesspal.client import Client
 from pals import palList
 import datetime
