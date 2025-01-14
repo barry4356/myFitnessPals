@@ -13,3 +13,4 @@ git add Reports/*.md
 git add *.md
 git commit -m "${commit_message}" && git push
 popd
+sleep 100
