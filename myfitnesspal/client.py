@@ -8,11 +8,10 @@ import uuid
 from collections import OrderedDict
 from http.cookiejar import CookieJar
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, cast, overload
+from typing import Any, cast, overload
 from urllib import parse
 
 import browser_cookie3
-import cloudscraper
 import lxml.html
 import requests
 from measurement.base import MeasureBase
@@ -27,7 +26,6 @@ from .exercise import Exercise
 from .fooditem import FoodItem
 from .meal import Meal
 from .note import Note
-from .temp_cookies import global_cookies
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +63,7 @@ class Client(MFPBase):
 
     def __init__(
         self,
-        cookiejar: Optional[CookieJar] = None,
+        cookiejar: CookieJar | None = None,
         unit_aware: bool = False,
         log_requests_to: Path | None = None,
     ):
@@ -80,7 +78,7 @@ class Client(MFPBase):
 
         self.unit_aware = unit_aware
 
-        self.session = cloudscraper.create_scraper(sess=requests.Session())
+        self.session = requests.Session()
         self.session.headers.update(
             {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.104 Safari/537.36"
@@ -89,13 +87,16 @@ class Client(MFPBase):
         if cookiejar is not None:
             self.session.cookies.update(cookiejar)
         else:
-            self.session.cookies.update(global_cookies)
+            for domain_name in self.COOKIE_DOMAINS:
+                self.session.cookies.update(
+                    browser_cookie3.load(domain_name=domain_name)
+                )
 
         self._auth_data = self._get_auth_data()
         self._user_metadata = self._get_user_metadata()
 
     @property
-    def user_id(self) -> Optional[types.MyfitnesspalUserId]:
+    def user_id(self) -> types.MyfitnesspalUserId | None:
         """The user_id of the logged-in account."""
         if self._auth_data is None:
             return None
@@ -108,7 +109,7 @@ class Client(MFPBase):
         return self._user_metadata
 
     @property
-    def access_token(self) -> Optional[str]:
+    def access_token(self) -> str | None:
         """The access token for the logged-in account."""
         if self._auth_data is None:
             return None
@@ -220,7 +221,7 @@ class Client(MFPBase):
         self,
         url: str,
         send_token: bool = False,
-        headers: Optional[Dict[str, str]] = None,
+        headers: dict[str, str] | None = None,
         **kwargs,
     ) -> requests.Response:
         request_id = uuid.uuid4()
@@ -290,7 +291,7 @@ class Client(MFPBase):
 
         return json.loads(content)
 
-    def _get_measurement(self, name: str, value: Optional[float]) -> MeasureBase:
+    def _get_measurement(self, name: str, value: float | None) -> MeasureBase:
         if not self.unit_aware:
             return value
         measure, kwarg = self.DEFAULT_MEASURE_AND_UNIT[name]
@@ -355,7 +356,7 @@ class Client(MFPBase):
 
         return False  # Who knows, probably not my diary.
 
-    def _get_meals(self, document) -> List[Meal]:
+    def _get_meals(self, document) -> list[Meal]:
         meals = []
         fields = None
         meal_headers = document.xpath("//tr[@class='meal_header']")
@@ -512,12 +513,10 @@ class Client(MFPBase):
         return value
 
     @overload
-    def get_date(self, year: int, month: int, day: int) -> Day:
-        ...
+    def get_date(self, year: int, month: int, day: int) -> Day: ...
 
     @overload
-    def get_date(self, date: datetime.date) -> Day:
-        ...
+    def get_date(self, date: datetime.date) -> Day: ...
 
     def get_date(self, *args, **kwargs) -> Day:
         """Returns your meal diary for a particular date"""
@@ -598,9 +597,9 @@ class Client(MFPBase):
     def get_measurements(
         self,
         measurement="Weight",
-        lower_bound: Optional[datetime.date] = None,
-        upper_bound: Optional[datetime.date] = None,
-    ) -> Dict[datetime.date, float]:
+        lower_bound: datetime.date | None = None,
+        upper_bound: datetime.date | None = None,
+    ) -> dict[datetime.date, float]:
         """Returns measurements of a given name between two dates."""
         upper_bound, lower_bound = self._ensure_upper_lower_bound(
             lower_bound, upper_bound
@@ -652,8 +651,8 @@ class Client(MFPBase):
     def set_measurements(
         self,
         measurement="Weight",
-        value: Optional[float] = None,
-        date: Optional[datetime.date] = None,
+        value: float | None = None,
+        date: datetime.date | None = None,
     ) -> None:
         """Sets measurement for today's date."""
         if value is None:
@@ -732,7 +731,7 @@ class Client(MFPBase):
 
         return measurements_dict
 
-    def _get_measurement_ids(self, document) -> Dict[str, int]:
+    def _get_measurement_ids(self, document) -> dict[str, int]:
         ids = {}
         for next_data in document.xpath("//script[@id='__NEXT_DATA__']"):
             next_data_json = json.loads(next_data.text)
@@ -756,7 +755,7 @@ class Client(MFPBase):
         )
         return Note(result.json()["item"])
 
-    def _get_water(self, date: datetime.date) -> Union[float, Volume]:
+    def _get_water(self, date: datetime.date) -> float | Volume:
         result = self._get_request_for_url(
             parse.urljoin(
                 self.BASE_URL_SECURE,
@@ -774,9 +773,9 @@ class Client(MFPBase):
         self,
         report_name: str = "Net Calories",
         report_category: str = "Nutrition",
-        lower_bound: Optional[datetime.date] = None,
-        upper_bound: Optional[datetime.date] = None,
-    ) -> Dict[datetime.date, float]:
+        lower_bound: datetime.date | None = None,
+        upper_bound: datetime.date | None = None,
+    ) -> dict[datetime.date, float]:
         """
         Returns report data of a given name and category between two dates.
         """
@@ -816,15 +815,18 @@ class Client(MFPBase):
         return (
             parse.urljoin(
                 self.BASE_URL_SECURE,
-                "reports/results/" + report_category.lower() + "/" + report_name,
+                "api/services/reports/results/"
+                + report_category.lower()
+                + "/"
+                + report_name,
             )
             + f"/{str(delta.days)}.json"
         )
 
-    def _get_report_data(self, json_data: dict) -> Dict[datetime.date, float]:
-        report_data: Dict[datetime.date, float] = {}
+    def _get_report_data(self, json_data: dict) -> dict[datetime.date, float]:
+        report_data: dict[datetime.date, float] = {}
 
-        data = json_data.get("data")
+        data = json_data.get("outcome", {}).get("results")
 
         if not data:
             return report_data
@@ -846,7 +848,7 @@ class Client(MFPBase):
     def __str__(self) -> str:
         return f"MyFitnessPal Client for {self.effective_username}"
 
-    def get_food_search_results(self, query: str) -> List[FoodItem]:
+    def get_food_search_results(self, query: str) -> list[FoodItem]:
         """Search for foods matching a specified query."""
         search_url = parse.urljoin(self.BASE_URL_SECURE, self.SEARCH_PATH)
         document = self._get_document_for_url(search_url)
@@ -873,7 +875,7 @@ class Client(MFPBase):
 
         return self._get_food_search_results(document)
 
-    def _get_food_search_results(self, document) -> List[FoodItem]:
+    def _get_food_search_results(self, document) -> list[FoodItem]:
         item_divs = document.xpath("//li[@class='matched-food']")
 
         items = []
@@ -968,19 +970,19 @@ class Client(MFPBase):
         fat: float,
         carbs: float,
         protein: float,
-        sodium: Optional[float] = None,
-        potassium: Optional[float] = None,
-        saturated_fat: Optional[float] = None,
-        polyunsaturated_fat: Optional[float] = None,
-        fiber: Optional[float] = None,
-        monounsaturated_fat: Optional[float] = None,
-        sugar: Optional[float] = None,
-        trans_fat: Optional[float] = None,
-        cholesterol: Optional[float] = None,
-        vitamin_a: Optional[float] = None,
-        calcium: Optional[float] = None,
-        vitamin_c: Optional[float] = None,
-        iron: Optional[float] = None,
+        sodium: float | None = None,
+        potassium: float | None = None,
+        saturated_fat: float | None = None,
+        polyunsaturated_fat: float | None = None,
+        fiber: float | None = None,
+        monounsaturated_fat: float | None = None,
+        sugar: float | None = None,
+        trans_fat: float | None = None,
+        cholesterol: float | None = None,
+        vitamin_a: float | None = None,
+        calcium: float | None = None,
+        vitamin_c: float | None = None,
+        iron: float | None = None,
         serving_size: str = "1 Serving",
         servingspercontainer: float = 1.0,
         sharepublic: bool = False,
@@ -1102,12 +1104,12 @@ class Client(MFPBase):
         self,
         energy: float,
         energy_unit: str = "calories",
-        carbohydrates: Optional[float] = None,
-        protein: Optional[float] = None,
-        fat: Optional[float] = None,
-        percent_carbohydrates: Optional[float] = None,
-        percent_protein: Optional[float] = None,
-        percent_fat: Optional[float] = None,
+        carbohydrates: float | None = None,
+        protein: float | None = None,
+        fat: float | None = None,
+        percent_carbohydrates: float | None = None,
+        percent_protein: float | None = None,
+        percent_fat: float | None = None,
     ) -> None:
         """Updates your nutrition goals.
 
@@ -1257,7 +1259,7 @@ class Client(MFPBase):
                 "status code: {status}".format(status=result.status_code)
             )
 
-    def get_recipes(self) -> Dict[int, str]:
+    def get_recipes(self) -> dict[int, str]:
         """Returns a dictionary with all saved recipes.
 
         Recipe ID will be used as dictionary key, recipe title as dictionary value.
@@ -1311,7 +1313,7 @@ class Client(MFPBase):
         recipe_url = parse.urljoin(self.BASE_URL_SECURE, recipe_path)
         document = self._get_document_for_url(recipe_url)
 
-        recipe_dict: Dict[str, Any] = {
+        recipe_dict: dict[str, Any] = {
             "@context": "https://schema.org",
             "@type": "Recipe",
             "author": self.effective_username,
@@ -1370,7 +1372,7 @@ class Client(MFPBase):
         recipe_dict["tags"] = ["MyFitnessPal"]
         return cast(types.Recipe, recipe_dict)
 
-    def get_meals(self) -> Dict[int, str]:
+    def get_meals(self) -> dict[int, str]:
         """Returns a dictionary with all saved meals.
 
         Key: Meal ID
@@ -1384,7 +1386,7 @@ class Client(MFPBase):
         meals = document.xpath(
             "//*[@id='matching']/li"
         )  # get all items in the recipe list
-        _idx: Optional[int] = None
+        _idx: int | None = None
         try:
             for _idx, meal in enumerate(meals):
                 meal_path = meal.xpath("./a")[0].attrib["href"]
@@ -1407,7 +1409,7 @@ class Client(MFPBase):
         meal_url = parse.urljoin(self.BASE_URL_SECURE, meal_path)
         document = self._get_document_for_url(meal_url)
 
-        recipe_dict: Dict[str, Any] = {
+        recipe_dict: dict[str, Any] = {
             "@context": "https://schema.org",
             "@type": "Recipe",
             "author": self.effective_username,
