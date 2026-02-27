@@ -3,7 +3,7 @@ palList = [
     'DelmonteBlackwell',
     #'babrock89456',
     'domgallelli',
-    'castilloomar05',
+    'castilloomar05 :muscle:',
     'Barry4356',
     'JohnSchulz5370'
 ]

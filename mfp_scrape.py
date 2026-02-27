@@ -16,38 +16,62 @@ def scrape_mfp(myDate, myPals):
     for myPal in palList:
         try:
             palDatum = {}
+            myDay = None
+            if ' :muscle:' in myPal: #Muscle emoji in username triggers protein goal
+                palDatum['uname'] = myPal.replace(' :muscle:','')
+                myDay = myClient.get_date(myDate, friend_username=palDatum['uname'])
+                palDatum['Goal'] = myDay._goals['protein']
+                palDatum['GoalType'] = 'protein'
+            else: #Default case is calorie goal
+                palDatum['uname'] = myPal
+                myDay = myClient.get_date(myDate, friend_username=palDatum['uname'])
+                palDatum['Goal'] = myDay._goals['calories']
+                palDatum['GoalType'] = 'calories'
             palDatum['Name'] = myPal
-            myDay = myClient.get_date(myDate, friend_username=myPal)
-            palDatum['Goal'] = myDay._goals['calories']
+            #Attempt to pull protein and calorie information for the day
             try:
                 palDatum['Calories'] = myDay.totals['calories']
             except:
                 palDatum['Calories'] = 0
             try:
-                palDatum['Excercises'] = myDay.exercises
-                for excercise in palDatum['Excercises']:
-                    for myexcercise in excercise.get_as_list():
-                        try:
-                            palDatum['Goal'] -= myexcercise['nutrition_information']['calories burned']
-                        except:
-                            pass
+                palDatum['Protein'] = myDay.totals['protein']
             except:
-                pass
+                palDatum['Protein'] = 0
+            if palDatum['GoalType'] == 'calories':
+                #Calorie goals need to be compared against there goal WITHOUT including excersise offset.
+                #So we need to remove the excersise offset from the goal
+                try:
+                    palDatum['Excercises'] = myDay.exercises
+                    for excercise in palDatum['Excercises']:
+                        for myexcercise in excercise.get_as_list():
+                            try:
+                                palDatum['Goal'] -= myexcercise['nutrition_information']['calories burned']
+                            except:
+                                pass
+                except:
+                    pass
             try:
+                #Track dinner specifically for 'warning' purposes
                 for meal in myDay.meals:
                     if meal.name.lower() == 'dinner':
                         palDatum['Dinner'] = meal.totals['calories']
             except:
                 palDatum['Dinner'] = 0
-            palDatum['Weblink'] = 'https://www.myfitnesspal.com/food/diary/'+myPal+'?date='+myDate.strftime('%Y-%m-%d')
+            palDatum['Weblink'] = 'https://www.myfitnesspal.com/food/diary/'+palDatum['uname']+'?date='+myDate.strftime('%Y-%m-%d')
+            #If calorie/protein goal fails, or no calories tracked, marked FAIL
+            #If dinner is missed, or we are suspiciously low on logged calories, mark WARN
             palDatum['Status'] = 'OK'
             if palDatum['Calories'] < (palDatum['Goal'] * .8) or palDatum['Dinner'] < 1:
                 palDatum['Status'] = 'WARN'
-            if palDatum['Calories'] > palDatum['Goal'] or palDatum['Calories'] < 1:
+            if palDatum['GoalType'] == 'calories' and palDatum['Calories'] > palDatum['Goal']:
+                palDatum['Status'] = 'FAIL'
+            elif palDatum['GoalType'] == 'protein' and palDatum['Protein'] < palDatum['Goal']:
+                palDatum['Status'] = 'FAIL'
+            elif palDatum['Calories'] < 1:
                 palDatum['Status'] = 'FAIL'
             palData.append(palDatum)
         except Exception as e:
-            print('Error pulling data for [{0}]'.format(myPal))
+            print('Error pulling data for [{0}]'.format(palDatum['uname']))
             print(traceback.format_exc())
             print(e)
     return palData
@@ -77,13 +101,19 @@ def write_report(filename, palData, myPals):
         markdownLines.append(' --- |')
     markdownLines.append('\n|')
     for pal in myPals:
+        #First cell of table is the user's name
         markdownLines.append(' '+pal+' |')
         myCount = 0
         for myDate in palData:
             if myDate == dates[myCount]:
                 for myEntry in palData[myDate]:
+                    #Find the relevant entry for this table row (based on user name)
                     if myEntry['Name'] == pal:
-                        markdownLines.append(' ['+str(int(myEntry['Calories']))+' / '+str(int(myEntry['Goal']))+']('+myEntry['Weblink']+') '+write_emoji(myEntry['Status'])+' |')
+                        #Cell includes data for goal for this day (either calorie or protein goal)
+                        if myEntry['GoalType'] == 'protein':
+                            markdownLines.append(' ['+str(int(myEntry['Protein']))+' / '+str(int(myEntry['Goal']))+']('+myEntry['Weblink']+') '+write_emoji(myEntry['Status'])+' |')
+                        else:
+                            markdownLines.append(' ['+str(int(myEntry['Calories']))+' / '+str(int(myEntry['Goal']))+']('+myEntry['Weblink']+') '+write_emoji(myEntry['Status'])+' |')
                         myCount += 1
         markdownLines.append('\n|')
         
